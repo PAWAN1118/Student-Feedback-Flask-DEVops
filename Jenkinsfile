@@ -9,7 +9,7 @@ pipeline {
         IMAGE_TAG      = "${BUILD_NUMBER}"
         CONTAINER_NAME = 'feedback-app'
         APP_PORT       = '5000'
-        HOST_PORT      = '8080'
+        HOST_PORT      = '8090'
     }
 
     options {
