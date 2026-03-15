@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Submit Feedback · FeedLoop</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="logo-block">
+        <span class="logo-icon">◈</span>
+        <div>
+          <div class="logo-title">FeedLoop</div>
+          <div class="logo-sub">Student Feedback Portal</div>
+        </div>
+      </div>
+      <a href="{{ url_for('index') }}" class="btn-ghost">← View All Feedback</a>
+    </div>
+  </header>
+
+  <main class="main-content form-page">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="form-layout">
+      <div class="form-left">
+        <div class="form-label-top">Share Your Experience</div>
+        <h1 class="form-heading">Your feedback<br/><em>shapes learning.</em></h1>
+        <p class="form-desc">Help instructors improve by sharing honest, constructive thoughts about your courses and labs.</p>
+        <div class="form-tips">
+          <div class="tip">✦ Be specific about what worked</div>
+          <div class="tip">✦ Suggest concrete improvements</div>
+          <div class="tip">✦ All responses are appreciated</div>
+        </div>
+      </div>
+
+      <div class="form-right">
+        <form method="POST" action="{{ url_for('submit') }}" class="feedback-form" novalidate>
+
+          <div class="field-group">
+            <label for="name">Your Name <span class="required">*</span></label>
+            <input type="text" id="name" name="name" placeholder="e.g. Arjun Sharma" required/>
+          </div>
+
+          <div class="field-group">
+            <label for="course">Course / Lab</label>
+            <input type="text" id="course" name="course" placeholder="e.g. DevOps Lab, Python 101"/>
+          </div>
+
+          <div class="field-group">
+            <label>Overall Rating</label>
+            <div class="star-rating">
+              {% for val in [5, 4, 3, 2, 1] %}
+              <input type="radio" id="star{{ val }}" name="rating" value="{{ val }}"/>
+              <label for="star{{ val }}" title="{{ val }} star{% if val != 1 %}s{% endif %}">★</label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label for="message">Your Feedback <span class="required">*</span></label>
+            <textarea id="message" name="message" rows="5"
+              placeholder="What did you find most valuable? What could be improved?"></textarea>
+          </div>
+
+          <button type="submit" class="btn-submit">Submit Feedback →</button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <span>FeedLoop · Student Feedback System</span>
+    <span>Built with Flask + Docker + Jenkins + Ansible</span>
+  </footer>
+
+</body>
+</html>

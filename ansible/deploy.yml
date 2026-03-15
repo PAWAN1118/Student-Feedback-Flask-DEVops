@@ -1,0 +1,110 @@
+---
+# ─── Student Feedback System — Ansible Deployment Playbook ──────────
+# Deploys the Docker container to the target host(s).
+# Called by Jenkins after the Docker image is built and validated.
+#
+# Variables (passed via --extra-vars from Jenkinsfile):
+#   image_name    : Docker image name   (default: student-feedback-system)
+#   image_tag     : Docker image tag    (default: latest)
+#   container_name: Docker container    (default: feedback-app)
+#   host_port     : Host port mapping   (default: 8080)
+
+- name: Deploy Student Feedback Application
+  hosts: local
+  become: false   # Set to true if Docker requires sudo on your system
+
+  vars:
+    image_name:     "student-feedback-system"
+    image_tag:      "latest"
+    container_name: "feedback-app"
+    host_port:      "8080"
+    app_port:       "5000"
+    data_volume:    "feedback_data"
+
+  tasks:
+
+    # ── 1. Pre-flight checks ───────────────────────────────────────
+    - name: Check Docker is available
+      command: docker info
+      register: docker_check
+      changed_when: false
+      failed_when: docker_check.rc != 0
+
+    - name: Print deployment info
+      debug:
+        msg:
+          - "Deploying image : {{ image_name }}:{{ image_tag }}"
+          - "Container name  : {{ container_name }}"
+          - "Exposed port    : {{ host_port }} → {{ app_port }}"
+
+    # ── 2. Ensure data volume exists ──────────────────────────────
+    - name: Create named volume for persistent feedback data
+      command: docker volume create {{ data_volume }}
+      register: volume_result
+      changed_when: "'Created' in volume_result.stdout"
+
+    # ── 3. Stop and remove existing container (if running) ────────
+    - name: Stop existing container (if running)
+      command: docker stop {{ container_name }}
+      register: stop_result
+      failed_when: false   # Don't fail if container doesn't exist
+      changed_when: stop_result.rc == 0
+
+    - name: Remove existing container (if exists)
+      command: docker rm {{ container_name }}
+      register: rm_result
+      failed_when: false
+      changed_when: rm_result.rc == 0
+
+    # ── 4. Run the new container ───────────────────────────────────
+    - name: Start the feedback application container
+      command: >
+        docker run -d
+        --name {{ container_name }}
+        --restart unless-stopped
+        -p {{ host_port }}:{{ app_port }}
+        -v {{ data_volume }}:/data
+        -e DB_PATH=/data/feedback.db
+        -e FLASK_ENV=production
+        --health-cmd="python -c \"import urllib.request; urllib.request.urlopen('http://localhost:{{ app_port }}/health')\""
+        --health-interval=30s
+        --health-timeout=10s
+        --health-retries=3
+        {{ image_name }}:{{ image_tag }}
+      register: run_result
+
+    - name: Show container ID
+      debug:
+        msg: "Container started with ID: {{ run_result.stdout[:12] }}"
+
+    # ── 5. Wait for app to be healthy ─────────────────────────────
+    - name: Wait for application to be ready
+      uri:
+        url: "http://localhost:{{ host_port }}/health"
+        method: GET
+        status_code: 200
+        timeout: 5
+      register: health_check
+      retries: 10
+      delay: 3
+      until: health_check.status == 200
+
+    # ── 6. Confirm deployment ──────────────────────────────────────
+    - name: Deployment summary
+      debug:
+        msg:
+          - "╔═══════════════════════════════════════════╗"
+          - "║  ✓  Deployment successful!                 ║"
+          - "║  URL: http://localhost:{{ host_port }}          ║"
+          - "║  Image: {{ image_name }}:{{ image_tag }}        ║"
+          - "╚═══════════════════════════════════════════╝"
+
+    # ── 7. Show running containers ─────────────────────────────────
+    - name: List running Docker containers
+      command: docker ps --filter name={{ container_name }} --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+      register: docker_ps
+      changed_when: false
+
+    - name: Print container status
+      debug:
+        msg: "{{ docker_ps.stdout_lines }}"

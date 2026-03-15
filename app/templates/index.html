@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Student Feedback System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="logo-block">
+        <span class="logo-icon">◈</span>
+        <div>
+          <div class="logo-title">FeedLoop</div>
+          <div class="logo-sub">Student Feedback Portal</div>
+        </div>
+      </div>
+      <a href="{{ url_for('submit') }}" class="btn-primary">+ Submit Feedback</a>
+    </div>
+  </header>
+
+  <main class="main-content">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <section class="hero-section">
+      <div class="hero-label">Collective Intelligence</div>
+      <h1 class="hero-title">Course Feedback<br/><em>Dashboard</em></h1>
+      <p class="hero-desc">Browse feedback submitted by students across courses and labs.</p>
+      <div class="stats-row">
+        <div class="stat-chip">
+          <span class="stat-num">{{ feedbacks|length }}</span>
+          <span class="stat-label">Total Responses</span>
+        </div>
+        <div class="stat-chip">
+          <span class="stat-num">
+            {% set rated = feedbacks | selectattr('rating') | list %}
+            {% if rated %}
+              {{ (rated | map(attribute='rating') | map('int') | sum / rated|length) | round(1) }}
+            {% else %}—{% endif %}
+          </span>
+          <span class="stat-label">Avg Rating</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="feedback-section">
+      {% if feedbacks %}
+        <div class="feedback-grid">
+          {% for fb in feedbacks %}
+          <article class="feedback-card">
+            <div class="card-top">
+              <div class="avatar">{{ fb.name[0].upper() }}</div>
+              <div class="card-meta">
+                <div class="card-name">{{ fb.name }}</div>
+                <div class="card-course">{{ fb.course or 'General Feedback' }}</div>
+              </div>
+              {% if fb.rating %}
+              <div class="rating-badge rating-{{ fb.rating }}">
+                {% for i in range(fb.rating | int) %}★{% endfor %}
+                {% for i in range(5 - fb.rating | int) %}☆{% endfor %}
+              </div>
+              {% endif %}
+            </div>
+            <p class="card-message">{{ fb.message }}</p>
+            <div class="card-footer">
+              <span class="card-time">{{ fb.submitted_at }}</span>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-icon">✦</div>
+          <h2>No feedback yet</h2>
+          <p>Be the first to share your thoughts.</p>
+          <a href="{{ url_for('submit') }}" class="btn-primary">Submit Feedback</a>
+        </div>
+      {% endif %}
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>FeedLoop · Student Feedback System</span>
+    <span>Built with Flask + Docker + Jenkins + Ansible</span>
+  </footer>
+
+</body>
+</html>
