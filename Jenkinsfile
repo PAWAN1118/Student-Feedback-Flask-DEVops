@@ -5,7 +5,6 @@ pipeline {
     agent any
 
     environment {
-        APP_NAME       = 'student-feedback-system'
         IMAGE_NAME     = 'student-feedback-system'
         IMAGE_TAG      = "${BUILD_NUMBER}"
         CONTAINER_NAME = 'feedback-app'
@@ -21,17 +20,14 @@ pipeline {
 
     stages {
 
-        // ── Stage 1: Checkout ──────────────────────────────────────
         stage('Checkout') {
             steps {
                 echo "=== Checking out source code ==="
                 checkout scm
-                bat 'git rev-parse --abbrev-ref HEAD'
                 bat 'git rev-parse --short HEAD'
             }
         }
 
-        // ── Stage 2: Lint ──────────────────────────────────────────
         stage('Lint') {
             steps {
                 echo "=== Running Python linting ==="
@@ -48,7 +44,6 @@ pipeline {
             }
         }
 
-        // ── Stage 3: Test ──────────────────────────────────────────
         stage('Test') {
             steps {
                 echo "=== Running unit tests ==="
@@ -60,7 +55,7 @@ pipeline {
                     )
                     if exist tests (
                         pip install --quiet flask pytest
-                        set DB_PATH=%TEMP%\\test_feedback.db
+                        set DB_PATH=/tmp/test_feedback.db
                         pytest tests/ -v
                     ) else (
                         echo No tests directory found - skipping
@@ -69,7 +64,6 @@ pipeline {
             }
         }
 
-        // ── Stage 4: Build Docker Image ────────────────────────────
         stage('Build Docker Image') {
             steps {
                 echo "=== Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG} ==="
@@ -89,14 +83,13 @@ pipeline {
             }
         }
 
-        // ── Stage 5: Validate Image ────────────────────────────────
         stage('Validate Image') {
             steps {
                 echo "=== Running smoke test ==="
                 bat '''
                     docker run -d ^
                         --name feedback-smoke-test ^
-                        -e DB_PATH=C:/tmp/test.db ^
+                        -e DB_PATH=/tmp/test.db ^
                         -p 5099:5000 ^
                         %IMAGE_NAME%:%IMAGE_TAG%
 
@@ -111,6 +104,7 @@ pipeline {
                     curl -f http://localhost:5099/health
                     if %errorlevel% neq 0 (
                         echo Smoke test FAILED!
+                        docker logs feedback-smoke-test
                         docker stop feedback-smoke-test
                         docker rm feedback-smoke-test
                         exit /b 1
@@ -123,7 +117,6 @@ pipeline {
             }
         }
 
-        // ── Stage 6: Deploy ────────────────────────────────────────
         stage('Deploy') {
             steps {
                 echo "=== Deploying application container ==="
@@ -144,25 +137,25 @@ pipeline {
 
                     if %errorlevel% neq 0 (
                         echo Deployment FAILED!
+                        docker logs %CONTAINER_NAME%
                         exit /b 1
                     )
 
-                    echo Container started successfully!
+                    echo Container started!
                     docker ps --filter name=%CONTAINER_NAME%
                 '''
             }
         }
 
-        // ── Stage 7: Verify Deployment ────────────────────────────
         stage('Verify Deployment') {
             steps {
                 echo "=== Verifying live deployment ==="
                 bat '''
-                    ping -n 10 127.0.0.1 >nul
-
+                    ping -n 15 127.0.0.1 >nul
                     curl -f http://localhost:%HOST_PORT%/health
                     if %errorlevel% neq 0 (
-                        echo Deployment verification FAILED!
+                        echo Verification FAILED!
+                        docker logs %CONTAINER_NAME%
                         exit /b 1
                     )
                     echo Deployment VERIFIED! App is live at http://localhost:%HOST_PORT%
@@ -176,7 +169,7 @@ pipeline {
             echo '=== PIPELINE SUCCESS - App running at http://localhost:8080 ==='
         }
         failure {
-            echo 'PIPELINE FAILED - check logs above for details'
+            echo 'PIPELINE FAILED - check logs above'
             bat 'docker stop feedback-smoke-test 2>nul & docker rm feedback-smoke-test 2>nul & exit /b 0'
         }
         always {
