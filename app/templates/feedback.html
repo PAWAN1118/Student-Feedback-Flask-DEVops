@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Submit Feedback · Student Feedback System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+</head>
+<body>
+
+<header class="header">
+  <div class="container header-inner">
+    <div class="brand">
+      <div class="brand-icon">SF</div>
+      <div>
+        <div class="brand-name">Student Feedback</div>
+        <div class="brand-tagline">Academic Excellence Portal</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a href="{{ url_for('index') }}" class="nav-link">← Back to Dashboard</a>
+    </nav>
+  </div>
+</header>
+
+<main class="container main">
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">
+          <span class="alert-icon">{% if category == 'success' %}✓{% else %}!{% endif %}</span>
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="form-page-layout">
+    <div class="form-sidebar">
+      <h1 class="form-heading">Share Your<br/>Experience</h1>
+      <p class="form-desc">Your feedback helps instructors improve course quality and create better learning experiences for all students.</p>
+      <div class="form-guidelines">
+        <div class="guideline">
+          <span class="guideline-icon">◆</span>
+          Be specific about what worked well
+        </div>
+        <div class="guideline">
+          <span class="guideline-icon">◆</span>
+          Suggest concrete improvements
+        </div>
+        <div class="guideline">
+          <span class="guideline-icon">◆</span>
+          Keep feedback constructive
+        </div>
+        <div class="guideline">
+          <span class="guideline-icon">◆</span>
+          All responses are valued
+        </div>
+      </div>
+    </div>
+
+    <div class="form-main">
+      <div class="form-card">
+        <h2 class="form-card-title">New Feedback Entry</h2>
+
+        <form method="POST" action="{{ url_for('submit') }}" novalidate>
+
+          <div class="form-row">
+            <div class="field">
+              <label for="name">Full Name <span class="req">*</span></label>
+              <input type="text" id="name" name="name"
+                     value="{{ form_data.get('name', '') }}"
+                     placeholder="e.g. Arjun Sharma" required/>
+            </div>
+            <div class="field">
+              <label for="course">Course / Lab</label>
+              <input type="text" id="course" name="course"
+                     value="{{ form_data.get('course', '') }}"
+                     placeholder="e.g. DevOps Lab, Python 101"/>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Overall Rating</label>
+            <div class="star-rating">
+              {% for val in [5,4,3,2,1] %}
+              <input type="radio" id="star{{ val }}" name="rating" value="{{ val }}"
+                     {% if form_data.get('rating') == val|string %}checked{% endif %}/>
+              <label for="star{{ val }}">★</label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="message">
+              Feedback <span class="req">*</span>
+              <span class="char-count" id="charCount">0 / 500</span>
+            </label>
+            <textarea id="message" name="message" rows="5" maxlength="500"
+                      placeholder="Describe your experience with this course or lab…"
+                      oninput="updateCount(this)">{{ form_data.get('message', '') }}</textarea>
+          </div>
+
+          <div class="form-actions">
+            <a href="{{ url_for('index') }}" class="btn-secondary">Cancel</a>
+            <button type="submit" class="btn-primary">Submit Feedback →</button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>Student Feedback System &copy; 2025</span>
+    <span>Flask · Docker · Jenkins · Ansible</span>
+  </div>
+</footer>
+
+<script>
+function updateCount(el) {
+  document.getElementById('charCount').textContent = el.value.length + ' / 500';
+}
+// Init count if form_data has message
+window.addEventListener('DOMContentLoaded', () => {
+  const msg = document.getElementById('message');
+  if (msg.value) updateCount(msg);
+});
+</script>
+</body>
+</html>
