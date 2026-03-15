@@ -23,9 +23,9 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copy application code
-COPY app/       ./app/
-COPY templates/ ./templates/
-COPY static/    ./static/
+COPY app/           ./app/
+COPY app/templates/ ./templates/
+COPY app/static/    ./static/
 
 # Create data directory for SQLite (will be mounted as a volume)
 RUN mkdir -p /data && chown appuser:appuser /data
