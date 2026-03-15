@@ -1,5 +1,5 @@
-// ─── Student Feedback System — Jenkins CI/CD Pipeline ───────────────
-// Pipeline flow: Checkout → Lint → Test → Build Image → Push → Deploy
+// ─── Student Feedback System — Jenkins CI/CD Pipeline (Windows) ─────
+// Pipeline flow: Checkout → Lint → Test → Build Image → Validate → Deploy → Verify
 // All stages run on the Jenkins agent (same machine for local setup).
 
 pipeline {
@@ -8,13 +8,13 @@ pipeline {
 
     // ── Environment variables ──────────────────────────────────────
     environment {
-        APP_NAME      = 'student-feedback-system'
-        IMAGE_NAME    = "student-feedback-system"
-        IMAGE_TAG     = "${BUILD_NUMBER}"        // e.g. "42"
+        APP_NAME       = 'student-feedback-system'
+        IMAGE_NAME     = 'student-feedback-system'
+        IMAGE_TAG      = "${BUILD_NUMBER}"
         CONTAINER_NAME = 'feedback-app'
-        APP_PORT      = '5000'
-        HOST_PORT     = '8080'
-        ANSIBLE_DIR   = './ansible'
+        APP_PORT       = '5000'
+        HOST_PORT      = '8080'
+        ANSIBLE_DIR    = './ansible'
     }
 
     // ── Pipeline options ───────────────────────────────────────────
@@ -31,8 +31,8 @@ pipeline {
             steps {
                 echo "=== Checking out source code ==="
                 checkout scm
-                sh 'echo "Branch: $(git rev-parse --abbrev-ref HEAD)"'
-                sh 'echo "Commit: $(git rev-parse --short HEAD)"'
+                bat 'git rev-parse --abbrev-ref HEAD'
+                bat 'git rev-parse --short HEAD'
             }
         }
 
@@ -40,11 +40,10 @@ pipeline {
         stage('Lint') {
             steps {
                 echo "=== Running Python linting ==="
-                sh '''
-                    pip install --quiet flake8 2>/dev/null || true
-                    # Check for syntax errors (E9xx) and undefined names (F821)
+                bat '''
+                    pip install --quiet flake8
                     flake8 app/ --count --select=E9,F63,F7,F82 --show-source --statistics
-                    echo "Lint passed!"
+                    echo Lint passed!
                 '''
             }
         }
@@ -53,14 +52,14 @@ pipeline {
         stage('Test') {
             steps {
                 echo "=== Running unit tests ==="
-                sh '''
-                    pip install --quiet flask pytest 2>/dev/null || true
-                    # Run tests if test files exist
-                    if [ -d tests ]; then
-                        DB_PATH=/tmp/test_feedback.db pytest tests/ -v
-                    else
-                        echo "No tests directory found — skipping (add tests/ for production!)"
-                    fi
+                bat '''
+                    pip install --quiet flask pytest
+                    if exist tests (
+                        set DB_PATH=%TEMP%\\test_feedback.db
+                        pytest tests/ -v
+                    ) else (
+                        echo No tests directory found - skipping
+                    )
                 '''
             }
         }
@@ -69,15 +68,14 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 echo "=== Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG} ==="
-                sh '''
-                    docker build \
-                        --tag ${IMAGE_NAME}:${IMAGE_TAG} \
-                        --tag ${IMAGE_NAME}:latest \
-                        --label "build=${BUILD_NUMBER}" \
-                        --label "commit=$(git rev-parse --short HEAD)" \
+                bat '''
+                    docker build ^
+                        --tag %IMAGE_NAME%:%IMAGE_TAG% ^
+                        --tag %IMAGE_NAME%:latest ^
+                        --label "build=%BUILD_NUMBER%" ^
                         .
-                    echo "Docker image built successfully!"
-                    docker images ${IMAGE_NAME}
+                    echo Docker image built successfully!
+                    docker images %IMAGE_NAME%
                 '''
             }
         }
@@ -86,37 +84,57 @@ pipeline {
         stage('Validate Image') {
             steps {
                 echo "=== Validating Docker image ==="
-                sh '''
-                    # Run a quick smoke test of the image
-                    docker run --rm \
-                        --name feedback-smoke-test \
-                        -e DB_PATH=/tmp/test.db \
-                        -d -p 5099:5000 \
-                        ${IMAGE_NAME}:${IMAGE_TAG}
+                bat '''
+                    docker run -d ^
+                        --name feedback-smoke-test ^
+                        -e DB_PATH=C:/tmp/test.db ^
+                        -p 5099:5000 ^
+                        %IMAGE_NAME%:%IMAGE_TAG%
 
-                    # Wait for app to start
-                    sleep 8
+                    timeout /t 10 /nobreak
 
-                    # Check health endpoint
-                    HEALTH=$(curl -sf http://localhost:5099/health || echo "FAILED")
-                    docker stop feedback-smoke-test || true
+                    curl -f http://localhost:5099/health
+                    if %errorlevel% neq 0 (
+                        echo Smoke test FAILED!
+                        docker stop feedback-smoke-test
+                        docker rm feedback-smoke-test
+                        exit /b 1
+                    )
 
-                    echo "Health check response: $HEALTH"
-                    echo "$HEALTH" | grep -q "ok" && echo "Smoke test PASSED!" || (echo "Smoke test FAILED!" && exit 1)
+                    docker stop feedback-smoke-test
+                    docker rm feedback-smoke-test
+                    echo Smoke test PASSED!
                 '''
             }
         }
 
-        // ── Stage 6: Deploy with Ansible ──────────────────────────
+        // ── Stage 6: Deploy ────────────────────────────────────────
+        // Note: Ansible does not run natively on Windows.
+        // Deployment is handled directly with Docker commands,
+        // which achieves the same result as the Ansible playbook.
         stage('Deploy') {
             steps {
-                echo "=== Deploying with Ansible ==="
-                sh '''
-                    ansible-playbook \
-                        -i ${ANSIBLE_DIR}/inventory \
-                        ${ANSIBLE_DIR}/deploy.yml \
-                        --extra-vars "image_name=${IMAGE_NAME} image_tag=${IMAGE_TAG} host_port=${HOST_PORT} container_name=${CONTAINER_NAME}" \
-                        -v
+                echo "=== Deploying application container ==="
+                bat '''
+                    :: Stop and remove existing container if running
+                    docker stop %CONTAINER_NAME% 2>nul
+                    docker rm   %CONTAINER_NAME% 2>nul
+
+                    :: Create named volume for persistent SQLite data
+                    docker volume create feedback_data
+
+                    :: Start the new container
+                    docker run -d ^
+                        --name %CONTAINER_NAME% ^
+                        --restart unless-stopped ^
+                        -p %HOST_PORT%:%APP_PORT% ^
+                        -v feedback_data:/data ^
+                        -e DB_PATH=/data/feedback.db ^
+                        -e FLASK_ENV=production ^
+                        %IMAGE_NAME%:%IMAGE_TAG%
+
+                    echo Container started successfully!
+                    docker ps --filter name=%CONTAINER_NAME%
                 '''
             }
         }
@@ -125,11 +143,14 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 echo "=== Verifying live deployment ==="
-                sh '''
-                    sleep 5
-                    RESPONSE=$(curl -sf http://localhost:${HOST_PORT}/health || echo "FAILED")
-                    echo "Live app response: $RESPONSE"
-                    echo "$RESPONSE" | grep -q "ok" && echo "Deployment VERIFIED!" || (echo "Deployment FAILED!" && exit 1)
+                bat '''
+                    timeout /t 8 /nobreak
+                    curl -f http://localhost:%HOST_PORT%/health
+                    if %errorlevel% neq 0 (
+                        echo Deployment verification FAILED!
+                        exit /b 1
+                    )
+                    echo Deployment VERIFIED! App is live at http://localhost:%HOST_PORT%
                 '''
             }
         }
@@ -139,25 +160,18 @@ pipeline {
     post {
         success {
             echo """
-╔══════════════════════════════════════════╗
-║  ✓  PIPELINE SUCCESS                     ║
-║     App running at http://localhost:8080  ║
-╚══════════════════════════════════════════╝
+==============================================
+  PIPELINE SUCCESS
+  App running at: http://localhost:8080
+==============================================
             """
         }
         failure {
-            echo "✗ PIPELINE FAILED — check logs above for details"
-            // Clean up any dangling smoke-test containers
-            sh 'docker stop feedback-smoke-test 2>/dev/null || true'
+            echo "PIPELINE FAILED - check logs above for details"
+            bat 'docker stop feedback-smoke-test 2>nul & docker rm feedback-smoke-test 2>nul & exit /b 0'
         }
         always {
-            echo "Build #${BUILD_NUMBER} completed. Cleaning old images..."
-            sh '''
-                # Remove images older than last 3 builds
-                docker images ${IMAGE_NAME} --format "{{.Tag}}" | \
-                    sort -rn | tail -n +4 | \
-                    xargs -I{} docker rmi ${IMAGE_NAME}:{} 2>/dev/null || true
-            '''
+            echo "Build #${BUILD_NUMBER} completed."
         }
     }
 }
