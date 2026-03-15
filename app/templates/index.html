@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Student Feedback System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header class="header">
+  <div class="container header-inner">
+    <div class="brand">
+      <div class="brand-icon">SF</div>
+      <div>
+        <div class="brand-name">Student Feedback</div>
+        <div class="brand-tagline">Academic Excellence Portal</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a href="{{ url_for('index') }}" class="nav-link active">Dashboard</a>
+      <a href="{{ url_for('submit') }}" class="btn-primary">+ New Feedback</a>
+    </nav>
+  </div>
+</header>
+
+<main class="container main">
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">
+          <span class="alert-icon">{% if category == 'success' %}✓{% else %}!{% endif %}</span>
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <!-- Stats Row -->
+  <section class="stats-section">
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.total }}</div>
+      <div class="stat-label">Total Responses</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.avg_rating or '—' }}</div>
+      <div class="stat-label">Average Rating</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.recent }}</div>
+      <div class="stat-label">This Week</div>
+    </div>
+    <div class="stat-card chart-card">
+      <div class="stat-label" style="margin-bottom:8px">Rating Distribution</div>
+      <canvas id="ratingChart" height="60"></canvas>
+    </div>
+  </section>
+
+  <!-- Search + Title -->
+  <section class="toolbar">
+    <div class="toolbar-left">
+      <h1 class="page-title">Feedback Dashboard</h1>
+      <span class="result-count">
+        {% if query %}
+          {{ total }} result{% if total != 1 %}s{% endif %} for "<strong>{{ query }}</strong>"
+        {% else %}
+          {{ total }} entr{% if total != 1 %}ies{% else %}y{% endif %}
+        {% endif %}
+      </span>
+    </div>
+    <form class="search-form" method="GET" action="{{ url_for('index') }}">
+      <input type="text" name="q" value="{{ query }}" placeholder="Search by name, course, or keyword…" class="search-input"/>
+      <button type="submit" class="search-btn">Search</button>
+      {% if query %}
+        <a href="{{ url_for('index') }}" class="clear-btn">✕ Clear</a>
+      {% endif %}
+    </form>
+  </section>
+
+  <!-- Feedback Table -->
+  {% if feedbacks %}
+  <section class="table-section">
+    <table class="feedback-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Student</th>
+          <th>Course</th>
+          <th>Rating</th>
+          <th>Feedback</th>
+          <th>Submitted</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fb in feedbacks %}
+        <tr class="feedback-row">
+          <td class="col-id">{{ fb.id }}</td>
+          <td class="col-name">
+            <div class="student-cell">
+              <div class="avatar">{{ fb.name[0].upper() }}</div>
+              <span>{{ fb.name }}</span>
+            </div>
+          </td>
+          <td class="col-course">
+            {% if fb.course %}
+              <span class="course-badge">{{ fb.course }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="col-rating">
+            {% if fb.rating %}
+              <span class="stars stars-{{ fb.rating }}">
+                {% for i in range(fb.rating | int) %}★{% endfor %}{% for i in range(5 - fb.rating | int) %}☆{% endfor %}
+              </span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="col-message">
+            <div class="message-preview" title="{{ fb.message }}">{{ fb.message }}</div>
+          </td>
+          <td class="col-date">{{ fb.submitted_at[:10] }}</td>
+          <td class="col-actions">
+            <a href="{{ url_for('edit', feedback_id=fb.id) }}" class="action-btn edit-btn" title="Edit">✎</a>
+            <form method="POST" action="{{ url_for('delete', feedback_id=fb.id) }}" style="display:inline"
+                  onsubmit="return confirm('Delete this feedback?')">
+              <button type="submit" class="action-btn delete-btn" title="Delete">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <nav class="pagination">
+    {% if page > 1 %}
+      <a href="{{ url_for('index', page=page-1, q=query) }}" class="page-btn">← Prev</a>
+    {% endif %}
+
+    {% for p in range(1, total_pages + 1) %}
+      <a href="{{ url_for('index', page=p, q=query) }}"
+         class="page-btn {% if p == page %}page-active{% endif %}">{{ p }}</a>
+    {% endfor %}
+
+    {% if page < total_pages %}
+      <a href="{{ url_for('index', page=page+1, q=query) }}" class="page-btn">Next →</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">📋</div>
+    <h2>No feedback found</h2>
+    <p>{% if query %}Try a different search term.{% else %}Be the first to submit feedback.{% endif %}</p>
+    {% if not query %}
+      <a href="{{ url_for('submit') }}" class="btn-primary">Submit Feedback</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</main>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>Student Feedback System &copy; 2025</span>
+    <span>Flask · Docker · Jenkins · Ansible</span>
+  </div>
+</footer>
+
+<script>
+// Rating Distribution Chart
+const dist = {{ stats.distribution | tojson }};
+const labels = ['1★','2★','3★','4★','5★'];
+const data   = [0,0,0,0,0];
+dist.forEach(d => { data[parseInt(d.rating)-1] = d.count; });
+
+new Chart(document.getElementById('ratingChart'), {
+  type: 'bar',
+  data: {
+    labels,
+    datasets: [{
+      data,
+      backgroundColor: ['#ef4444','#f97316','#eab308','#84cc16','#22c55e'],
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } },
+      y: { display: false }
+    },
+    responsive: true,
+    maintainAspectRatio: false,
+  }
+});
+</script>
+</body>
+</html>
