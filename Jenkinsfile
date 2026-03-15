@@ -1,5 +1,4 @@
 // ─── Student Feedback System — Jenkins CI/CD Pipeline (Windows) ─────
-// Pipeline flow: Checkout → Lint → Test → Build Image → Validate → Deploy → Verify
 
 pipeline {
 
@@ -80,6 +79,10 @@ pipeline {
                         --tag %IMAGE_NAME%:latest ^
                         --label "build=%BUILD_NUMBER%" ^
                         .
+                    if %errorlevel% neq 0 (
+                        echo Docker build FAILED!
+                        exit /b 1
+                    )
                     echo Docker image built successfully!
                     docker images %IMAGE_NAME%
                 '''
@@ -97,7 +100,13 @@ pipeline {
                         -p 5099:5000 ^
                         %IMAGE_NAME%:%IMAGE_TAG%
 
-                    timeout /t 12 /nobreak
+                    if %errorlevel% neq 0 (
+                        echo Failed to start smoke test container!
+                        exit /b 1
+                    )
+
+                    echo Waiting for container to start...
+                    ping -n 14 127.0.0.1 >nul
 
                     curl -f http://localhost:5099/health
                     if %errorlevel% neq 0 (
@@ -133,6 +142,11 @@ pipeline {
                         -e FLASK_ENV=production ^
                         %IMAGE_NAME%:%IMAGE_TAG%
 
+                    if %errorlevel% neq 0 (
+                        echo Deployment FAILED!
+                        exit /b 1
+                    )
+
                     echo Container started successfully!
                     docker ps --filter name=%CONTAINER_NAME%
                 '''
@@ -144,7 +158,8 @@ pipeline {
             steps {
                 echo "=== Verifying live deployment ==="
                 bat '''
-                    timeout /t 8 /nobreak
+                    ping -n 10 127.0.0.1 >nul
+
                     curl -f http://localhost:%HOST_PORT%/health
                     if %errorlevel% neq 0 (
                         echo Deployment verification FAILED!
