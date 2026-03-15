@@ -1,6 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
-from database import init_db, add_feedback, get_all_feedback
-
+from app.database import init_db, add_feedback, get_all_feedback
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 app.secret_key = 'student-feedback-secret-key'
 
