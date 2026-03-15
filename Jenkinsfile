@@ -1,4 +1,6 @@
-// ─── Student Feedback System — Jenkins CI/CD Pipeline (Windows) ─────
+// ─── Student Feedback System — Jenkins CI/CD Pipeline (Windows + Ansible) ───
+// Ansible runs inside a Docker container to work on Windows Jenkins.
+// Pipeline: Checkout → Lint → Test → Build → Validate → Deploy(Ansible) → Verify
 
 pipeline {
 
@@ -10,6 +12,7 @@ pipeline {
         CONTAINER_NAME = 'feedback-app'
         APP_PORT       = '5000'
         HOST_PORT      = '8090'
+        ANSIBLE_IMAGE  = 'cytopia/ansible:latest'
     }
 
     options {
@@ -20,6 +23,7 @@ pipeline {
 
     stages {
 
+        // ── Stage 1: Checkout ──────────────────────────────────────
         stage('Checkout') {
             steps {
                 echo "=== Checking out source code ==="
@@ -28,6 +32,7 @@ pipeline {
             }
         }
 
+        // ── Stage 2: Lint ──────────────────────────────────────────
         stage('Lint') {
             steps {
                 echo "=== Running Python linting ==="
@@ -44,6 +49,7 @@ pipeline {
             }
         }
 
+        // ── Stage 3: Test ──────────────────────────────────────────
         stage('Test') {
             steps {
                 echo "=== Running unit tests ==="
@@ -64,6 +70,7 @@ pipeline {
             }
         }
 
+        // ── Stage 4: Build Docker Image ────────────────────────────
         stage('Build Docker Image') {
             steps {
                 echo "=== Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG} ==="
@@ -83,6 +90,7 @@ pipeline {
             }
         }
 
+        // ── Stage 5: Validate Image ────────────────────────────────
         stage('Validate Image') {
             steps {
                 echo "=== Running smoke test ==="
@@ -117,41 +125,51 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
+        // ── Stage 6: Deploy with Ansible (inside Docker) ──────────
+        // Ansible doesn't run natively on Windows, so we run it
+        // inside a lightweight Docker container that has Ansible
+        // pre-installed. We mount the Docker socket so Ansible
+        // can control Docker on the host machine.
+        stage('Deploy with Ansible') {
             steps {
-                echo "=== Deploying application container ==="
+                echo "=== Deploying with Ansible (running in Docker) ==="
                 bat '''
-                    docker stop %CONTAINER_NAME% 2>nul
-                    docker rm   %CONTAINER_NAME% 2>nul
+                    :: Pull Ansible Docker image if not present
+                    docker pull %ANSIBLE_IMAGE%
 
-                    docker volume create feedback_data
+                    :: Run Ansible playbook inside a container
+                    :: --rm            = remove container after run
+                    :: -v /var/run/docker.sock = share Docker socket (Linux/WSL)
+                    :: -v workspace    = mount our repo so playbook is accessible
+                    :: host.docker.internal = resolves to host machine from container
 
-                    docker run -d ^
-                        --name %CONTAINER_NAME% ^
-                        --restart unless-stopped ^
-                        -p %HOST_PORT%:%APP_PORT% ^
-                        -v feedback_data:/data ^
-                        -e DB_PATH=/data/feedback.db ^
-                        -e FLASK_ENV=production ^
-                        %IMAGE_NAME%:%IMAGE_TAG%
+                    docker run --rm ^
+                        -v %CD%:/workspace ^
+                        -w /workspace ^
+                        --add-host=host.docker.internal:host-gateway ^
+                        -v //var/run/docker.sock:/var/run/docker.sock ^
+                        %ANSIBLE_IMAGE% ^
+                        ansible-playbook ^
+                            -i ansible/inventory ^
+                            ansible/deploy.yml ^
+                            --extra-vars "image_name=%IMAGE_NAME% image_tag=%IMAGE_TAG% host_port=%HOST_PORT% container_name=%CONTAINER_NAME%" ^
+                            -v
 
                     if %errorlevel% neq 0 (
-                        echo Deployment FAILED!
-                        docker logs %CONTAINER_NAME%
+                        echo Ansible deployment FAILED!
                         exit /b 1
                     )
-
-                    echo Container started!
-                    docker ps --filter name=%CONTAINER_NAME%
+                    echo Ansible deployment complete!
                 '''
             }
         }
 
+        // ── Stage 7: Verify Deployment ────────────────────────────
         stage('Verify Deployment') {
             steps {
                 echo "=== Verifying live deployment ==="
                 bat '''
-                    ping -n 15 127.0.0.1 >nul
+                    ping -n 10 127.0.0.1 >nul
                     curl -f http://localhost:%HOST_PORT%/health
                     if %errorlevel% neq 0 (
                         echo Verification FAILED!
@@ -166,7 +184,7 @@ pipeline {
 
     post {
         success {
-            echo '=== PIPELINE SUCCESS - App running at http://localhost:8080 ==='
+            echo '=== PIPELINE SUCCESS - App running at http://localhost:8090 ==='
         }
         failure {
             echo 'PIPELINE FAILED - check logs above'
