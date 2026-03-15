@@ -1,6 +1,4 @@
 // ─── Student Feedback System — Jenkins CI/CD Pipeline (Windows + Ansible) ───
-// Ansible runs inside a Docker container to work on Windows Jenkins.
-// Pipeline: Checkout → Lint → Test → Build → Validate → Deploy(Ansible) → Verify
 
 pipeline {
 
@@ -12,7 +10,6 @@ pipeline {
         CONTAINER_NAME = 'feedback-app'
         APP_PORT       = '5000'
         HOST_PORT      = '8090'
-        ANSIBLE_IMAGE  = 'cytopia/ansible:latest'
     }
 
     options {
@@ -23,7 +20,6 @@ pipeline {
 
     stages {
 
-        // ── Stage 1: Checkout ──────────────────────────────────────
         stage('Checkout') {
             steps {
                 echo "=== Checking out source code ==="
@@ -32,7 +28,6 @@ pipeline {
             }
         }
 
-        // ── Stage 2: Lint ──────────────────────────────────────────
         stage('Lint') {
             steps {
                 echo "=== Running Python linting ==="
@@ -49,7 +44,6 @@ pipeline {
             }
         }
 
-        // ── Stage 3: Test ──────────────────────────────────────────
         stage('Test') {
             steps {
                 echo "=== Running unit tests ==="
@@ -70,7 +64,6 @@ pipeline {
             }
         }
 
-        // ── Stage 4: Build Docker Image ────────────────────────────
         stage('Build Docker Image') {
             steps {
                 echo "=== Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG} ==="
@@ -90,7 +83,6 @@ pipeline {
             }
         }
 
-        // ── Stage 5: Validate Image ────────────────────────────────
         stage('Validate Image') {
             steps {
                 echo "=== Running smoke test ==="
@@ -125,30 +117,32 @@ pipeline {
             }
         }
 
-        // ── Stage 6: Deploy with Ansible (inside Docker) ──────────
-        // Ansible doesn't run natively on Windows, so we run it
-        // inside a lightweight Docker container that has Ansible
-        // pre-installed. We mount the Docker socket so Ansible
-        // can control Docker on the host machine.
+        // ── Stage 6: Deploy with Ansible ──────────────────────────
+        // Uses a custom Ansible+Docker image built on the fly.
+        // This ensures both ansible and docker CLI are available.
         stage('Deploy with Ansible') {
             steps {
-                echo "=== Deploying with Ansible (running in Docker) ==="
+                echo "=== Building Ansible+Docker image ==="
                 bat '''
-                    :: Pull Ansible Docker image if not present
-                    docker pull %ANSIBLE_IMAGE%
+                    :: Write a temporary Dockerfile for Ansible+Docker CLI
+                    echo FROM python:3.11-slim > AnsibleDockerfile
+                    echo RUN apt-get update -qq ^&^& apt-get install -y -qq docker.io ^&^& rm -rf /var/lib/apt/lists/* >> AnsibleDockerfile
+                    echo RUN pip install --quiet ansible >> AnsibleDockerfile
 
-                    :: Run Ansible playbook inside a container
-                    :: --rm            = remove container after run
-                    :: -v /var/run/docker.sock = share Docker socket (Linux/WSL)
-                    :: -v workspace    = mount our repo so playbook is accessible
-                    :: host.docker.internal = resolves to host machine from container
+                    :: Build the Ansible+Docker image
+                    docker build -f AnsibleDockerfile -t ansible-with-docker:local .
+                    if %errorlevel% neq 0 (
+                        echo Failed to build Ansible image!
+                        exit /b 1
+                    )
 
+                    echo Running Ansible playbook...
                     docker run --rm ^
                         -v %CD%:/workspace ^
                         -w /workspace ^
                         --add-host=host.docker.internal:host-gateway ^
                         -v //var/run/docker.sock:/var/run/docker.sock ^
-                        %ANSIBLE_IMAGE% ^
+                        ansible-with-docker:local ^
                         ansible-playbook ^
                             -i ansible/inventory ^
                             ansible/deploy.yml ^
@@ -164,7 +158,6 @@ pipeline {
             }
         }
 
-        // ── Stage 7: Verify Deployment ────────────────────────────
         stage('Verify Deployment') {
             steps {
                 echo "=== Verifying live deployment ==="
